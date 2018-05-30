@@ -6,6 +6,7 @@ import socket
 from contextlib import contextmanager
 from enum import Enum
 import random
+import time
 
 from struct import *
 
@@ -32,6 +33,7 @@ def send_packet(dest, packet):
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_RAW,
                              socket.IPPROTO_ICMP)
+        sock.settimeout(1)
         sock.sendto(packet, (dest, 1))
         yield sock
         sock.close()
@@ -55,6 +57,7 @@ def checksum(source_string):
     answer = ~sum
     answer = answer & 0xffff
     return answer
+
 
 def better_ord(value):
     if type(value) == int:
@@ -84,6 +87,17 @@ class ICMPPacket(object):
         return self.build_header()
 
 
+def time_ping(ip, header, times=2):
+    total = 0
+    for i in range(times):
+        with send_packet(ip, header) as sock:
+            start = time.time()
+            sock.recv(1024)
+            delay = (time.time() - start) * 1000
+            total += delay
+    return total/times
+
+
 def main():
     """Main programmy thing, y'all know what it do"""
     parser = argparse.ArgumentParser(description="Ping Tool")
@@ -97,10 +111,8 @@ def main():
 
     packet = ICMPPacket()
 
-    with send_packet(ip, packet.header) as sock:
-        print(sock.recv(1024))
-
-    print(ip)
+    delay = time_ping(ip, packet.header)
+    print(delay)
 
 
 if __name__ == "__main__":

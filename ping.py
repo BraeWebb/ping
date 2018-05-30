@@ -30,7 +30,8 @@ def log_error(error, *parameters):
 @contextmanager
 def send_packet(dest, packet):
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW,
+                             socket.IPPROTO_ICMP)
         sock.sendto(packet, (dest, 1))
         yield sock
         sock.close()
@@ -39,73 +40,27 @@ def send_packet(dest, packet):
         log_error(Errors.SOCKET_ERROR, dest)
 
 
-class Packet(object):
+def checksum(source_string):
+    sum = 0
+    count_to = (len(source_string) / 2) * 2
+    count = 0
+    while count < count_to:
+        this_val = better_ord(source_string[count + 1])*256+better_ord(source_string[count])
+        sum = sum + this_val
+        count = count + 2
+    if count_to < len(source_string):
+        sum = sum + better_ord(source_string[len(source_string) - 1])
+    sum = (sum >> 16) + (sum & 0xffff)
+    sum = sum + (sum >> 16)
+    answer = ~sum
+    answer = answer & 0xffff
+    return answer
 
-    _version = 4
-    _header_length = 5
-    _service_type = 0
-    _flags = 0
-    _frag_off = 0
-
-    def __init__(self, from_ip, to_ip, ttl=60):
-        self.length = 0
-        self.ttl = ttl
-        self.id = 2405
-        self.protocol = socket.IPPROTO_NONE
-        self.checksum = 0
-        self.from_ip = socket.inet_aton(from_ip)
-        self.to_ip = socket.inet_aton(to_ip)
-
-    @property
-    def ip_header(self):
-        return pack('!BBBHHHBBH4s4s', self._version, self._header_length,
-                    self._service_type, self.length, self.id, self._frag_off,
-                    self.ttl, self.protocol, self.checksum, self.from_ip,
-                    self.to_ip)
-
-
-# tcp header fields
-tcp_source = 1234   # source port
-tcp_dest = 80   # destination port
-tcp_seq = 454
-tcp_ack_seq = 0
-tcp_doff = 5    #4 bit field, size of tcp header, 5 * 4 = 20 bytes
-#tcp flags
-tcp_fin = 0
-tcp_syn = 1
-tcp_rst = 0
-tcp_psh = 0
-tcp_ack = 0
-tcp_urg = 0
-tcp_window = socket.htons(5840)    #   maximum allowed window size
-tcp_check = 0
-tcp_urg_ptr = 0
-
-tcp_offset_res = (tcp_doff << 4) + 0
-tcp_flags = tcp_fin + (tcp_syn << 1) + (tcp_rst << 2) + (tcp_psh <<3) + (tcp_ack << 4) + (tcp_urg << 5)
-
-# the ! in the pack format string means network order
-tcp_header = pack('!HHLLBBHHH' , tcp_source, tcp_dest, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags,  tcp_window, tcp_check, tcp_urg_ptr)
-
-
-class TCPPacket(Packet):
-
-    def __init__(self, source, dest, ttl=60):
-        from_ip, self.from_port = source
-        to_ip, self.to_port = dest
-
-        super().__init__(from_ip, to_ip, ttl=ttl)
-
-        self.protocol = socket.IPPROTO_TCP
-        self.sequence = 0
-        self.ack_sequence = 0
-        self.offset = 5
-
-    @property
-    def tcp_header(self):
-        return pack('!HHLLBBHHH', tcp_source, tcp_dest, tcp_seq, tcp_ack_seq,
-                    tcp_offset_res, tcp_flags,  tcp_window, tcp_check,
-                    tcp_urg_ptr)
+def better_ord(value):
+    if type(value) == int:
+        return value
+    else:
+        return ord(value)
 
 
 class ICMPPacket(object):
@@ -113,10 +68,21 @@ class ICMPPacket(object):
         self._type = type_
         self._code = code
         self._checksum = 0
+        self._id = random.randint(0, 65565)
+        self._seq = 0
+
+    def build_header(self):
+        return pack('BBHHH', self._type, self._code,
+                    self._checksum, self._id, self._seq)
 
     @property
-    def ping_header(self):
-        return pack('!bbHHh', self._type, self._code, self._checksum, 0, 0)
+    def header(self):
+        self._seq += 1
+        self._checksum = 0
+        dummy = self.build_header()
+        self._checksum = checksum(dummy)
+        return self.build_header()
+
 
 def main():
     """Main programmy thing, y'all know what it do"""
@@ -129,41 +95,10 @@ def main():
 
     ip = socket.gethostbyname(args.hostname)
 
-    source_ip = '10.0.0.42'
-    dest_ip = ip # or socket.gethostbyname('www.google.com')
+    packet = ICMPPacket()
 
-
-    # ip header fields
-    # ip_ihl = 5
-    # ip_ver = 4
-    # ip_tos = 0
-    # ip_tot_len = 0  # kernel will fill the correct total length
-    # ip_id = 54321   #Id of this packet
-    # ip_frag_off = 0
-    # ip_ttl = 255
-    # ip_proto = socket.IPPROTO_TCP
-    # ip_check = 0    # kernel will fill the correct checksum
-    # ip_saddr = socket.inet_aton ( source_ip )   #Spoof the source ip address if you want to
-    # ip_daddr = socket.inet_aton ( dest_ip )
-    #
-    # # ip_ihl_ver = (ip_ver << 4) + ip_ihl
-    #
-    # # the ! in the pack format string means network order
-    # ip_header = pack('!BBBHHHBBH4s4s' , ip_ver, ip_ihl, ip_tos, ip_tot_len, ip_id, ip_frag_off, ip_ttl, ip_proto, ip_check, ip_saddr, ip_daddr)
-
-    # ip_header = Packet(source_ip, dest_ip, ttl=60).ip_header
-
-    # with send_packet(ip, ip_header) as sock:
-    #     pass
-
-    packet = Packet("127.0.0.1", ip)
-    tcp_packet = ICMPPacket()
-    # print(tcp_packet.ping_header)
-
-    with send_packet(ip, tcp_packet.ping_header) as sock:
-        print(sock)
+    with send_packet(ip, packet.header) as sock:
         print(sock.recv(1024))
-    # send_packet(ip, packet.ip_header + tcp_packet.ping_header)
 
     print(ip)
 

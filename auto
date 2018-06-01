@@ -1,0 +1,19 @@
+#!/bin/bash
+
+for host in `cat hosts`; do
+    ./ping.py $host | tee out/pyping/$host;
+    ping -c 4 $host | tee out/ping/$host;
+    traceroute $host | tee out/trace/$host;
+done
+
+for host in `cat hosts`; do
+    cat $host >> out/pyping.out;
+    cat "\n" >> out/pyping.out;
+    cat out/pyping/$host >> out/pyping.out;
+
+    cat $host >> out/system.out;
+    cat "\n" >> out/system.out;
+    cat out/ping/$host >> out/system.out;
+    cat "\n" >> out/system.out;
+    cat out/trace/$host >> out/system.out;
+done

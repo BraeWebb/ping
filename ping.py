@@ -18,7 +18,7 @@ MAX_HOPS = 50
 class Errors(Enum):
     """An Enum representing the types of errors that may occur."""
     SOCKET_ERROR = "Unable to open TCP socket connection to {}"
-    HOSTNAME_ERROR = "Hostname ({}) could not be resolved."
+    HOSTNAME_ERROR = "Not a valid hostname"
     UNREACHABLE = "Request timed out"
 
 
@@ -29,7 +29,7 @@ def log_error(error, *parameters):
         error (Errors): The type of error that has occurred.
         *parameters (*): Any extra information relevant to the error.
     """
-    print(error.name, ":", error.value.format(*parameters))
+    print(error.value.format(*parameters))
     sys.exit(1)
 
 
@@ -65,16 +65,16 @@ class Sender:
         self.socket.close()
 
 
-def checksum(source_string):
+def checksum(destination):
     sum = 0
-    count_to = (len(source_string) / 2) * 2
+    count_to = (len(destination) / 2) * 2
     count = 0
     while count < count_to:
-        this_val = better_ord(source_string[count + 1])*256+better_ord(source_string[count])
+        this_val = better_ord(destination[count + 1]) * 256 + better_ord(destination[count])
         sum = sum + this_val
         count = count + 2
-    if count_to < len(source_string):
-        sum = sum + better_ord(source_string[len(source_string) - 1])
+    if count_to < len(destination):
+        sum = sum + better_ord(destination[len(destination) - 1])
     sum = (sum >> 16) + (sum & 0xffff)
     sum = sum + (sum >> 16)
     answer = ~sum
@@ -179,10 +179,18 @@ def main():
 
     args = parser.parse_args()
 
+    print("Pyping by B.Webb")
+    print()
+
     packet = ICMPPacket(args.hostname, timeout=args.timeout)
+
+    print(f"Sending {args.pings + 1} PINGs to {args.hostname}, IP {packet.address}")
 
     delays = time_ping(packet, times=args.pings)
     delays = [delay for delay in delays if delay]
+
+    if not delays:
+        log_error(Errors.UNREACHABLE)
 
     hops, hop = None, None
     for hops, hop in enumerate(trace_route(packet, max_hops=args.max_hops)):
@@ -192,13 +200,8 @@ def main():
     if hop:
         delays.append(hop[1])
 
-    if not delays:
-        log_error(Errors.UNREACHABLE)
     average = sum(delays) / len(delays)
 
-    print("Pinglog by Brae Webb")
-    print()
-    print(f"Sending {args.pings + 1} PINGs to {args.hostname}, IP {packet.address}")
     print(f"{len(delays)} replies received with average {average:.0f} ms, {hops+1} hops.")
 
 

@@ -66,18 +66,18 @@ class Sender:
 
 
 def checksum(destination):
-    sum = 0
-    count_to = (len(destination) / 2) * 2
-    count = 0
-    while count < count_to:
-        this_val = better_ord(destination[count + 1]) * 256 + better_ord(destination[count])
-        sum = sum + this_val
-        count = count + 2
+    total = 0
+    count_to = (len(destination) // 2) * 2
+
+    for count in range(0, count_to, 2):
+        total += better_ord(destination[count + 1]) * 256 + better_ord(destination[count])
+
     if count_to < len(destination):
-        sum = sum + better_ord(destination[len(destination) - 1])
-    sum = (sum >> 16) + (sum & 0xffff)
-    sum = sum + (sum >> 16)
-    answer = ~sum
+        total = total + better_ord(destination[len(destination) - 1])
+
+    total = (total >> 16) + (total & 0xffff)
+    total = total + (total >> 16)
+    answer = ~total
     answer = answer & 0xffff
     return answer
 
